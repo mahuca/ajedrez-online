@@ -3,8 +3,10 @@ services:
     name: ajedrez-online
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm ci --omit=dev
     startCommand: npm start
+    autoDeploy: yes
+    branch: main
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
