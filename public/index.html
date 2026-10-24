@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1b242d">
+  <meta name="description" content="Juega al ajedrez 1 contra 1 con un enlace privado. Sin registro, con reglas completas y reconexión automática.">
+  <title>Ajedrez Online · Juega 1v1 con un enlace</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Ajedrez Online, inicio">
+      <span class="brand-icon" aria-hidden="true">♞</span>
+      <span class="brand-text">Ajedrez <strong>Online</strong></span>
+    </a>
+    <div class="header-note">Sin registro · Enlace privado</div>
+  </header>
+
+  <main>
+    <!-- ==================== LOBBY ==================== -->
+    <section id="lobbyScreen" class="screen lobby" aria-labelledby="lobbyTitle">
+      <div class="hero">
+        <p class="eyebrow">1 contra 1 · tablero en tiempo real</p>
+        <h1 id="lobbyTitle">Tu partida,<br><em>tu enlace.</em></h1>
+        <p class="hero-text">
+          Crea una sala privada, comparte el código con quien quieras y juega
+          desde cualquier dispositivo. El servidor valida cada jugada: nada de
+          trampas.
+        </p>
+        <ul class="features" aria-label="Características">
+          <li><span aria-hidden="true">♜</span> Ratón y táctil</li>
+          <li><span aria-hidden="true">♞</span> Enlace privado</li>
+          <li><span aria-hidden="true">♛</span> Reglas completas</li>
+          <li><span aria-hidden="true">♚</span> Reconexión</li>
+        </ul>
+      </div>
+
+      <div class="lobby-card">
+        <div class="field">
+          <label for="playerName">Tu nombre <span>(opcional)</span></label>
+          <input id="playerName" type="text" maxlength="20" autocomplete="nickname"
+                 placeholder="Cómo te llamas" aria-describedby="nameHint">
+          <p id="nameHint" class="hint">Se mostrará a tu rival.</p>
+        </div>
+
+        <button id="createBtn" class="btn btn-primary btn-lg" type="button">
+          <span>Crear sala</span>
+          <span class="btn-arrow" aria-hidden="true">→</span>
+        </button>
+
+        <div class="divider"><span>o entra con un código</span></div>
+
+        <form id="joinForm" class="join-form" novalidate>
+          <label class="sr-only" for="codeInput">Código de sala</label>
+          <input id="codeInput" class="code-input" type="text" inputmode="text"
+                 maxlength="6" placeholder="ABC123" autocomplete="off"
+                 autocapitalize="characters" spellcheck="false">
+          <button id="joinBtn" class="btn btn-secondary" type="submit">Entrar</button>
+        </form>
+
+        <p id="lobbyError" class="message message-error" role="alert" hidden></p>
+        <div id="resumeNotice" class="message message-resume" hidden></div>
+      </div>
+    </section>
+
+    <!-- ==================== PARTIDA ==================== -->
+    <section id="gameScreen" class="screen game" aria-labelledby="gameTitle" hidden>
+      <h1 id="gameTitle" class="sr-only">Partida de ajedrez online</h1>
+
+      <div class="game-top">
+        <div class="room-info">
+          <span class="room-label">Sala</span>
+          <strong id="roomCode" class="room-code">------</strong>
+          <button id="copyBtn" class="icon-btn" type="button"
+                  title="Copiar enlace de invitación" aria-label="Copiar enlace de invitación">
+            <span aria-hidden="true">⧉</span>
+          </button>
+        </div>
+        <div class="game-actions">
+          <span id="connectionBadge" class="connection-badge" title="Estado de la conexión">
+            <span class="dot" aria-hidden="true"></span>
+            <span id="connectionText">En línea</span>
+          </span>
+          <button id="flipBtn" class="btn btn-ghost btn-sm" type="button"
+                  title="Girar el tablero">⟲ Girar</button>
+          <button id="leaveBtn" class="btn btn-danger-ghost btn-sm" type="button">Salir</button>
+        </div>
+      </div>
+
+      <div class="players">
+        <div id="topPlayer" class="player-bar">
+          <div class="player-identity">
+            <span id="topColor" class="player-color" aria-hidden="true">♚</span>
+            <span id="topName" class="player-name">Esperando rival…</span>
+            <span id="topTag" class="player-tag">Rival</span>
+          </div>
+          <div id="topCaptured" class="captured" aria-label="Capturas del rival"></div>
+          <div id="topMaterial" class="material" aria-live="polite"></div>
+        </div>
+
+        <div class="board-shell">
+          <div id="board" class="chessboard" role="grid" aria-label="Tablero de ajedrez"></div>
+
+          <div id="waitingOverlay" class="board-overlay" hidden>
+            <div class="overlay-card">
+              <p class="overlay-kicker">Sala creada</p>
+              <h2>Esperando rival</h2>
+              <p>Comparte este código o el enlace de invitación:</p>
+              <div id="waitingCode" class="waiting-code">------</div>
+              <button id="waitingCopyBtn" class="btn btn-primary" type="button">
+                Copiar enlace
+              </button>
+              <p class="overlay-foot">La partida empezará en cuanto alguien entre.</p>
+            </div>
+          </div>
+
+          <div id="promotionOverlay" class="board-overlay" hidden>
+            <div class="overlay-card">
+              <p class="overlay-kicker">Peón coronado</p>
+              <h2>Elige la pieza</h2>
+              <div id="promotionRow" class="promotion-row" role="group" aria-label="Pieza de promoción"></div>
+              <button id="cancelPromotionBtn" class="btn btn-ghost btn-sm promotion-cancel" type="button">
+                Cancelar
+              </button>
+            </div>
+          </div>
+
+          <div id="resultOverlay" class="board-overlay" hidden>
+            <div class="overlay-card result-card">
+              <p id="resultKicker" class="overlay-kicker">Fin de la partida</p>
+              <h2 id="resultTitle">Jaque mate</h2>
+              <p id="resultText"></p>
+              <div class="result-actions">
+                <button id="rematchBtn" class="btn btn-primary" type="button">Revancha</button>
+                <button id="resultLeaveBtn" class="btn btn-ghost" type="button">Salir</button>
+              </div>
+              <p id="rematchNote" class="rematch-note" hidden></p>
+            </div>
+          </div>
+        </div>
+
+        <div id="bottomPlayer" class="player-bar">
+          <div class="player-identity">
+            <span id="bottomColor" class="player-color" aria-hidden="true">♔</span>
+            <span id="bottomName" class="player-name">Tú</span>
+            <span id="bottomTag" class="player-tag">Tú</span>
+          </div>
+          <div id="bottomCaptured" class="captured" aria-label="Tus capturas"></div>
+          <div id="bottomMaterial" class="material" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <div class="game-status">
+        <p id="statusText" class="status-text" aria-live="polite">Conectando…</p>
+        <div id="moveList" class="move-list" aria-label="Jugadas de la partida"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Hecho para jugar sin cuentas.</span>
+    <span>Servidor autoritativo · Reglas completas</span>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/shared/engine.js"></script>
+  <script src="/online.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

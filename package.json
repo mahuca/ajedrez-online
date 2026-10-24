@@ -1,0 +1,22 @@
+{
+  "name": "ajedrez-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ajedrez 1v1 online con salas privadas, servidor autoritativo y reconexión",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
