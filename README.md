@@ -164,12 +164,26 @@ La página `/torneo` organiza una liguilla entre los jugadores configurados:
 
 ### Base de datos gratuita (Neon)
 
-1. Crea una cuenta en [Neon](https://neon.tech) y un proyecto gratuito.
-2. Copia la cadena de conexión (`postgresql://usuario:clave@host/db?sslmode=require`).
-3. En Render, abre el servicio → **Environment** → añade `DATABASE_URL` como
-   secreto y guarda. El servicio se reinicia solo.
-4. Abre `/torneo`: si abajo pone «Resultados guardados de forma permanente», ya
-   está conectada.
+1. Crea una cuenta en [Neon](https://neon.tech) y un proyecto gratuito en la
+   región `aws-us-west-2` (Oregon), la misma que Render.
+2. Copia la cadena de conexión **pooled** (la que lleva `-pooler` en el host).
+3. Pásala como `DATABASE_URL` **sin la query string**: `pg` v8 falla con
+   `?sslmode=require` y `?channel_binding=require`; el SSL ya lo activa
+   `server/db.js` (`ssl: { rejectUnauthorized: false }` en hosts remotos).
+   ```bash
+   neon connection-string production --pooled   # quita lo que va tras «?»
+   ```
+4. En Render, añade `DATABASE_URL` como secreto. Se puede hacer por API:
+   ```bash
+   curl -X PUT -H "Authorization: Bearer $RENDER_API_KEY" \
+     -H "Content-Type: application/json" \
+     https://api.render.com/v1/services/<id>/env-vars \
+     -d '[{"key":"DATABASE_URL","value":"postgresql://…"}]'
+   ```
+5. Abre `/torneo`: si abajo pone «Resultados guardados de forma permanente», ya
+   está conectada. `/health` debe responder `"storage": "postgres"`.
+
+Las tablas (`torneo_resultados`, `torneo_ajustes`) se crean solas al arrancar.
 
 Sin `DATABASE_URL` la app funciona igual, pero avisa en `/torneo` de que los
 resultados se guardan en memoria. Las tablas se crean solas la primera vez.
