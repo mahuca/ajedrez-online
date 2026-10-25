@@ -236,6 +236,21 @@
     return response;
   }
 
+  async function watch(code) {
+    const normalized = String(code || '').trim().toUpperCase();
+    const response = await request('room:watch', { code: normalized });
+    if (!response.ok) return response;
+
+    room = response.room;
+    emit('room', room);
+    return response;
+  }
+
+  function stopWatching() {
+    if (!socket.connected) return Promise.resolve({ ok: true });
+    return request('room:leave', {});
+  }
+
   async function resume() {
     if (!session) return { ok: false, error: 'no_session' };
     if (resumePromise) return resumePromise;
@@ -333,6 +348,8 @@
     off,
     createRoom,
     joinRoom,
+    watch,
+    stopWatching,
     resume,
     sendMove,
     resign,

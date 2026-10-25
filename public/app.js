@@ -67,6 +67,11 @@
     waitingOverlay: document.getElementById('waitingOverlay'),
     waitingCode: document.getElementById('waitingCode'),
     waitingCopyBtn: document.getElementById('waitingCopyBtn'),
+    tournamentLink: document.getElementById('tournamentLink'),
+    spectatorNote: document.getElementById('spectatorNote'),
+    topClock: document.getElementById('topClock'),
+    bottomClock: document.getElementById('bottomClock'),
+    timeSummary: document.getElementById('timeSummary'),
     promotionOverlay: document.getElementById('promotionOverlay'),
     promotionRow: document.getElementById('promotionRow'),
     cancelPromotionBtn: document.getElementById('cancelPromotionBtn'),
@@ -94,11 +99,43 @@
   let rematchPending = false;
   let busy = false;
   let toastTimer = null;
+  let isSpectator = false;
+  let clockSkew = 0;
+  let clockTimer = null;
 
   // ==================== AYUDANTES ====================
 
   function other(color) {
     return color === 'white' ? 'black' : 'white';
+  }
+
+  function viewColor() {
+    return myColor || orientation || 'white';
+  }
+
+  function formatMs(milliseconds) {
+    const total = Math.max(0, Math.round((milliseconds || 0) / 1000));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    if (minutes >= 60) {
+      return Math.floor(minutes / 60) + ':'
+        + String(minutes % 60).padStart(2, '0') + ':'
+        + String(seconds).padStart(2, '0');
+    }
+    return minutes + ':' + String(seconds).padStart(2, '0');
+  }
+
+  function clockMs(color) {
+    if (!room || !room.timing) return 0;
+    const timing = room.timing;
+    let ms = timing[color] || 0;
+    if (room.state.turn === color) {
+      ms += timing.partial || 0;
+      if (timing.runningSince !== null && timing.runningSince !== undefined) {
+        ms += Math.max(0, Date.now() + clockSkew - timing.runningSince);
+      }
+    }
+    return ms;
   }
 
   function colorLabel(color) {
@@ -200,19 +237,24 @@
 
   function enterGame() {
     if (!room) return;
-    if (!myColor) myColor = O.getColor() || 'white';
-    if (!orientation) orientation = myColor;
+    if (!isSpectator && !myColor) myColor = O.getColor() || 'white';
+    if (!orientation) orientation = myColor || 'white';
+    document.body.classList.toggle('is-spectator', isSpectator);
+    el.spectatorNote.hidden = !isSpectator;
+    el.tournamentLink.hidden = !(room.pairingId || isSpectator);
     showGame();
     el.roomCode.textContent = room.code;
     el.waitingCode.textContent = room.code;
-    updateUrl(room.code);
+    if (!isSpectator) updateUrl(room.code);
     clearResumeNotice();
     clearLobbyError();
     clearSelection();
     pendingPromotion = null;
     movePending = false;
     el.promotionOverlay.hidden = true;
+    applyClockSkew();
     render();
+    startClockLoop();
   }
 
   // ==================== TABLERO ====================
@@ -326,7 +368,9 @@
     }
 
     nameEl.textContent = player.name;
-    tagEl.textContent = (isTop ? 'Rival' : 'Tú') + ' · ' + colorLabel(color);
+    tagEl.textContent = isSpectator
+      ? colorLabel(color)
+      : (isTop ? 'Rival' : 'Tú') + ' · ' + colorLabel(color);
 
     capturedEl.replaceChildren();
     const captured = room.state.captured[color] || [];
@@ -379,13 +423,82 @@
   }
 
   function renderPlayers() {
+    if (isSpectator) {
+      renderBar('top', other(viewColor()));
+      renderBar('bottom', viewColor());
+      return;
+    }
     if (!myColor) return;
     renderBar('top', other(myColor));
     renderBar('bottom', myColor);
   }
 
+  function applyClockSkew() {
+    if (room && room.timing && Number.isFinite(room.timing.serverNow)) {
+      clockSkew = room.timing.serverNow - Date.now();
+    }
+  }
+
+  function startClockLoop() {
+    if (clockTimer) return;
+    clockTimer = setInterval(() => {
+      if (!room || el.gameScreen.hidden) return;
+      renderClocks();
+    }, 500);
+  }
+
+  function renderClocks() {
+    if (!room || !room.timing) return;
+    const rows = [
+      { node: el.topClock, color: other(viewColor()) },
+      { node: el.bottomClock, color: viewColor() }
+    ];
+    for (const row of rows) {
+      const ms = clockMs(row.color);
+      row.node.textContent = formatMs(ms);
+      row.node.classList.toggle(
+        'ticking',
+        !room.status.over && room.state.turn === row.color
+          && room.timing.runningSince !== null
+      );
+      row.node.classList.toggle('is-you', !isSpectator && row.color === myColor);
+    }
+  }
+
+  function timeSummaryText() {
+    if (!room || !room.timing) return '';
+    const moves = room.timing.moves || [];
+    if (!moves.length) return '';
+    const parts = [];
+    for (const color of ['white', 'black']) {
+      const own = moves.filter((_, index) => (
+        color === 'white' ? index % 2 === 0 : index % 2 === 1
+      ));
+      const total = own.reduce((sum, value) => sum + value, 0);
+      const average = own.length ? total / own.length : 0;
+      parts.push(playerName(color) + ' ' + formatMs(total)
+        + (own.length ? ' (' + formatMs(average) + ' por jugada)' : ''));
+    }
+    return parts.join(' · ');
+  }
+
   function renderStatus() {
     if (!room) return;
+
+    if (isSpectator) {
+      if (room.status.over) {
+        el.statusText.textContent = spectatorResult(room.status).status;
+        return;
+      }
+      const current = playerName(room.state.turn);
+      const suffix = room.status.inCheck ? ' · ¡Jaque!' : '';
+      const watching = room.spectators > 1
+        ? ' · ' + (room.spectators - 1) + ' mirando'
+        : '';
+      el.statusText.textContent = 'Turno de ' + current + suffix + watching;
+      return;
+    }
+
     const opponent = other(myColor);
     const opponentName = playerName(opponent);
 
@@ -435,11 +548,20 @@
       parts.push(offline);
     }
 
+    if (room.spectators > 0) {
+      const watching = document.createElement('span');
+      watching.className = 'status-muted';
+      watching.textContent = ' · ' + room.spectators
+        + (room.spectators === 1 ? ' espectador' : ' espectadores');
+      parts.push(watching);
+    }
+
     el.statusText.replaceChildren(...parts);
   }
 
   function renderMoveList() {
     const history = room.history || [];
+    const times = (room.timing && room.timing.moves) || [];
     el.moveList.replaceChildren();
 
     if (!history.length) {
@@ -448,6 +570,21 @@
       empty.textContent = 'Sin jugadas todavía';
       el.moveList.appendChild(empty);
       return;
+    }
+
+    function addMove(parent, san, index) {
+      const move = document.createElement('span');
+      move.className = 'move-san';
+      move.textContent = san;
+      parent.appendChild(move);
+
+      if (times[index] != null) {
+        const time = document.createElement('span');
+        time.className = 'move-time';
+        time.textContent = formatMs(times[index]);
+        time.title = 'Tiempo pensado en esta jugada';
+        parent.appendChild(time);
+      }
     }
 
     for (let index = 0; index < history.length; index += 2) {
@@ -459,17 +596,9 @@
       number.textContent = (index / 2 + 1) + '.';
       pair.appendChild(number);
 
-      const whiteMove = document.createElement('span');
-      whiteMove.className = 'move-san';
-      whiteMove.textContent = history[index];
-      pair.appendChild(whiteMove);
+      addMove(pair, history[index], index);
 
-      if (history[index + 1]) {
-        const blackMove = document.createElement('span');
-        blackMove.className = 'move-san';
-        blackMove.textContent = history[index + 1];
-        pair.appendChild(blackMove);
-      }
+      if (history[index + 1]) addMove(pair, history[index + 1], index + 1);
 
       el.moveList.appendChild(pair);
     }
@@ -480,27 +609,52 @@
     });
   }
 
+  function spectatorResult(status) {
+    if (status.winner === 'white' || status.winner === 'black') {
+      const winner = playerName(status.winner);
+      const loser = playerName(other(status.winner));
+      return {
+        title: 'Victoria de ' + winner,
+        text: winner + ' gana la partida contra ' + loser + '.',
+        status: 'Victoria de ' + winner + '.'
+      };
+    }
+    return {
+      title: 'Tablas',
+      text: 'La partida ha terminado en tablas.',
+      status: 'Tablas.'
+    };
+  }
+
   function renderOverlays() {
-    const opponent = other(myColor);
-    const waiting = !room.status.over && !room.players[opponent];
+    const opponent = other(viewColor());
+    const waiting = !isSpectator && !room.status.over && !room.players[opponent];
     el.waitingOverlay.hidden = !waiting;
     if (waiting) el.waitingCode.textContent = room.code;
 
-    el.promotionOverlay.hidden = !pendingPromotion;
+    el.promotionOverlay.hidden = !pendingPromotion || isSpectator;
 
     const over = room.status.over;
     el.resultOverlay.hidden = !over;
+    el.resultLeaveBtn.textContent = isSpectator ? 'Volver al torneo' : 'Salir';
+
+    const summary = over ? timeSummaryText() : '';
+    el.timeSummary.textContent = summary;
+    el.timeSummary.hidden = !summary;
+
     if (!over) return;
 
-    const info = resultInfo(room.status, playerName(opponent));
+    const info = isSpectator
+      ? spectatorResult(room.status)
+      : resultInfo(room.status, playerName(opponent));
     el.resultKicker.textContent = room.status.reason === 'checkmate'
       ? 'Jaque mate'
       : 'Fin de la partida';
     el.resultTitle.textContent = info.title;
     el.resultText.textContent = info.text;
 
-    const canRematch = !!(room.players[opponent] && room.players[myColor]);
-    const voted = !!(room.rematchVotes && room.rematchVotes[myColor]);
+    const canRematch = !isSpectator && !!(room.players[opponent] && room.players[myColor]);
+    const voted = !isSpectator && !!(room.rematchVotes && room.rematchVotes[myColor]);
     el.rematchBtn.hidden = !canRematch;
     el.rematchBtn.disabled = rematchPending || voted;
     el.rematchBtn.textContent = rematchPending || voted ? 'Esperando…' : 'Revancha';
@@ -517,11 +671,13 @@
 
   function render() {
     if (!room) return;
-    if (!myColor) myColor = O.getColor() || 'white';
+    if (!isSpectator && !myColor) myColor = O.getColor() || 'white';
+    applyClockSkew();
     renderBoard();
     renderPlayers();
     renderStatus();
     renderMoveList();
+    renderClocks();
     renderOverlays();
   }
 
@@ -632,7 +788,9 @@
 
     if (!canInteract()) {
       const piece = room.state.board[row][col];
-      if (!O.isConnected()) {
+      if (isSpectator) {
+        showToast('Estás mirando la partida.');
+      } else if (!O.isConnected()) {
         showToast('Sin conexión. Reconectando…', 'error');
       } else if (!room.status.over && piece !== ' '
           && E.colorOf(piece) === myColor && room.state.turn !== myColor) {
@@ -933,6 +1091,12 @@
   }
 
   async function leaveGame(confirmFirst) {
+    if (isSpectator) {
+      await O.stopWatching();
+      window.location.href = '/torneo';
+      return;
+    }
+
     if (!room) {
       showLobby();
       updateUrl(null);
@@ -997,7 +1161,7 @@
     const wasOver = !!(room && room.status.over);
     room = payload;
 
-    if (!myColor) {
+    if (!myColor && !isSpectator) {
       const session = O.getSession();
       if (session) myColor = session.color;
     }
@@ -1151,6 +1315,21 @@
     get pendingPromotion() { return pendingPromotion; }
   };
 
+  async function startWatching(code) {
+    const response = await O.watch(code);
+    if (!response.ok) {
+      showLobby();
+      showLobbyError('No se pudo ver esa partida. ' + errorText(response.error));
+      updateUrl(null);
+      return;
+    }
+    isSpectator = true;
+    myColor = null;
+    orientation = 'white';
+    room = response.room;
+    enterGame();
+  }
+
   // ==================== ARRANQUE ====================
 
   function init() {
@@ -1161,11 +1340,16 @@
 
     const session = O.getSession();
     const urlCode = roomCodeFromUrl();
-    if (urlCode) {
-      el.codeInput.value = urlCode;
-    }
+    const watchOnly = new URLSearchParams(window.location.search).get('ver') === '1';
+    if (urlCode) el.codeInput.value = urlCode;
 
     showLobby();
+
+    if (urlCode && watchOnly) {
+      startWatching(urlCode);
+      return;
+    }
+
     updateUrl(urlCode);
 
     if (session && (!urlCode || urlCode === session.code)) {

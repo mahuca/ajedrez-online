@@ -4,6 +4,9 @@ Ajedrez 1 contra 1 por internet con salas privadas, sin registro. El servidor
 valida todas las jugadas con el mismo motor que usa el cliente, así que no se
 puede hacer trampas modificando el navegador.
 
+Incluye además un **torneo familiar** con calendario, clasificación, cronómetro
+de reflexión y partidas en directo para los que no están jugando.
+
 ## Características
 
 - Sala privada con código de 6 caracteres y enlace de invitación (`/room/CODE`).
@@ -13,7 +16,14 @@ puede hacer trampas modificando el navegador.
 - Capturas por jugador y ventaja material.
 - Reconexión automática al recargar o recuperar la red.
 - Rendición, revancha con intercambio de colores y limpieza de salas inactivas.
-- Sin cuentas, sin base de datos y sin cookies de seguimiento.
+- Cronómetro de reflexión: cuenta el tiempo que piensa cada jugador, sin límite
+  y sin que nadie pierda por tiempo. También guarda el tiempo de cada jugada.
+- Modo espectador: cualquiera con el enlace puede mirar la partida sin ocupar
+  asiento (`/room/CODE?ver=1`).
+- Torneo familiar en `/torneo`: calendario automático, clasificación con
+  desempates, botones para crear o unirse a la sala de cada partida, resultados
+  guardados solos al terminar y descarga en PGN.
+- Sin cuentas y sin cookies de seguimiento.
 
 ## Requisitos
 
@@ -54,20 +64,23 @@ PORT=3210 npm start
 npm test
 ```
 
-Incluye pruebas del motor (reglas, enroque, al paso, promoción, jaque mate,
-ahogado, capturas) y pruebas de integración del servidor (crear/unir sala,
-validación de jugadas, reconexión, rendición y revancha).
+46 pruebas: motor (reglas, enroque, al paso, promoción, jaque mate, ahogado,
+capturas), servidor (crear/unir sala, validación de jugadas, reconexión,
+rendición y revancha), cronómetro y espectadores, y torneo (calendario,
+clasificación, desempates, PGN y API).
 
 ## Arquitectura
 
 ```
 online-chess/
-├── shared/engine.js     Motor de ajedrez compartido (cliente y servidor)
-├── server/server.js     Express + Socket.IO; sirve la UI y gestiona eventos
-├── server/rooms.js      Salas, asientos, tokens, revancha y caducidad
-├── public/              HTML, CSS y JS del cliente
-├── tests/               Pruebas del motor y de integración
-└── render.yaml          Despliegue gratuito en Render
+├── shared/engine.js      Motor de ajedrez compartido (cliente y servidor)
+├── server/server.js      Express + Socket.IO; sirve la UI y gestiona eventos
+├── server/rooms.js       Salas, asientos, tokens, cronómetro y espectadores
+├── server/tournament.js  Calendario, clasificación, desempates y PGN
+├── server/db.js          PostgreSQL opcional (o memoria si no hay DATABASE_URL)
+├── public/               HTML, CSS y JS del cliente (juego y torneo)
+├── tests/                Pruebas del motor, del servidor y del torneo
+└── render.yaml           Despliegue gratuito en Render
 ```
 
 El flujo de una jugada es:
@@ -80,7 +93,7 @@ El flujo de una jugada es:
    a toda la sala. Si no, devuelve un error y el cliente no mueve la pieza.
 
 Las salas viven en memoria. Si el servidor se reinicia, las partidas en curso se
-pierden; es el compromiso de una versión gratuita sin base de datos.
+pierden; solo los resultados del torneo se conservan si hay base de datos.
 
 ## Despliegue gratuito en Render
 
@@ -105,12 +118,15 @@ Notas del plan gratuito:
 
 - El servicio se suspende tras un periodo sin tráfico. La primera visita puede
   tardar unos 30-60 segundos en despertar.
-- Las salas y partidas se pierden si el servicio se reinicia o se vuelve a
-  desplegar.
+- Las salas y partidas en curso se pierden si el servicio se reinicia o se
+  vuelve a desplegar. Los resultados del torneo se conservan si hay
+  `DATABASE_URL` configurada.
 - Render ofrece HTTPS y soporte de WebSocket; no hace falta configurar nada
   adicional.
 - Si cambias el nombre del servicio, actualiza la URL que compartas. El enlace
   de invitación se genera con el origen actual de la página.
+- Neon (PostgreSQL gratuito) no caduca por inactividad, así que los resultados
+  sobreviven a los reinicios de Render.
 
 ### Variables de entorno
 
@@ -118,8 +134,45 @@ Notas del plan gratuito:
 | --- | --- | --- |
 | `PORT` | `3000` | Puerto HTTP (Render lo asigna automáticamente). |
 | `NODE_VERSION` | `24` (en `render.yaml`) | Versión de Node en Render. |
+| `DATABASE_URL` | vacío | Cadena de PostgreSQL donde se guardan resultados del torneo. Sin ella, se guardan en memoria y se pierden al reiniciar. |
+| `TORNEO_CLAVE` | vacío | Clave del organizador para corregir resultados y cambiar jugadores. Sin ella, la administración del torneo queda desactivada. |
+| `TORNEO_JUGADORES` | `Abuelo,Manuel,Fernan,Alejandro` | Lista inicial de jugadores, separada por comas. |
+| `PG_POOL_MAX` | `4` | Conexiones máximas a PostgreSQL. |
 
-No hay claves de API ni secretos.
+`DATABASE_URL` y `TORNEO_CLAVE` son secretos: márcalos como **Secret** en Render
+y no los escribas en el repositorio.
+
+## Torneo familiar
+
+La página `/torneo` organiza una liguilla entre los jugadores configurados:
+
+- **Calendario automático** con el sistema circular. Con 4 jugadores o menos se
+  juega ida y vuelta (12 partidas, 6 rondas); con 5 o más, ida sola. Si el número
+  es impar, cada ronda descansa uno y ese descanso vale 1 punto.
+- **Clasificación** con victoria 1, tablas ½ y derrota 0. Desempate: resultado
+  directo entre los empatados y después número de victorias.
+- **Resultados por pareja y colores**, no por ronda. Así se puede añadir o quitar
+  jugadores sin perder lo ya jugado (no se puede quitar a quien ya tiene
+  resultados).
+- **Sala por partida**: quien tiene blancas pulsa «Crear sala» y el rival pulsa
+  «Unirme» cuando aparece el código. Al terminar, el resultado, los tiempos y el
+  PGN se guardan automáticamente.
+- **Espectadores**: el botón «Ver» abre la partida en modo espectador, con los
+  dos cronómetros en directo. No ocupa asiento ni pide nombre.
+- **Administración** (con `TORNEO_CLAVE`): corregir o anular un resultado a mano,
+  descargar el PGN y editar la lista de jugadores.
+
+### Base de datos gratuita (Neon)
+
+1. Crea una cuenta en [Neon](https://neon.tech) y un proyecto gratuito.
+2. Copia la cadena de conexión (`postgresql://usuario:clave@host/db?sslmode=require`).
+3. En Render, abre el servicio → **Environment** → añade `DATABASE_URL` como
+   secreto y guarda. El servicio se reinicia solo.
+4. Abre `/torneo`: si abajo pone «Resultados guardados de forma permanente», ya
+   está conectada.
+
+Sin `DATABASE_URL` la app funciona igual, pero avisa en `/torneo` de que los
+resultados se guardan en memoria. Las tablas se crean solas la primera vez.
 
 ## Seguridad y privacidad
 

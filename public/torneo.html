@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1b242d">
+  <meta name="description" content="Calendario, clasificación y partidas del torneo familiar de ajedrez.">
+  <title>Torneo familiar · Ajedrez Online</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/torneo.css">
+</head>
+<body class="tournament-page">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Ajedrez Online, inicio">
+      <span class="brand-icon" aria-hidden="true">♞</span>
+      <span class="brand-text">Ajedrez <strong>Online</strong></span>
+    </a>
+    <div class="header-note">
+      <a class="header-link" href="/">Jugar una partida suelta →</a>
+    </div>
+  </header>
+
+  <main class="tournament">
+    <section class="t-hero" aria-labelledby="torneoTitle">
+      <p class="eyebrow">Liguilla · todos contra todos</p>
+      <h1 id="torneoTitle">Torneo<br><em>familiar.</em></h1>
+      <p class="hero-text" id="torneoLead">
+        Cada partida se juega en una sala privada. Quien tiene blancas crea la
+        sala y el rival pulsa «Unirme». Los resultados se guardan solos al
+        terminar.
+      </p>
+      <div id="roster" class="roster" aria-label="Jugadores del torneo"></div>
+      <p id="formatNote" class="format-note"></p>
+      <p id="storageNotice" class="notice" role="status" hidden></p>
+      <p id="pageMessage" class="message message-error" role="alert" hidden></p>
+    </section>
+
+    <div class="t-layout">
+      <section class="t-card t-standings" aria-labelledby="standingsTitle">
+        <div class="t-card-head">
+          <h2 id="standingsTitle">Clasificación</h2>
+          <span id="progress" class="t-progress"></span>
+        </div>
+        <div class="t-table-wrap">
+          <table class="standings-table">
+            <thead>
+              <tr>
+                <th scope="col" class="col-rank">#</th>
+                <th scope="col">Jugador</th>
+                <th scope="col" class="col-num" title="Partidas jugadas">PJ</th>
+                <th scope="col" class="col-num" title="Ganadas">G</th>
+                <th scope="col" class="col-num" title="Tablas">T</th>
+                <th scope="col" class="col-num" title="Perdidas">P</th>
+                <th scope="col" class="col-num col-points" title="Puntos">Pts</th>
+              </tr>
+            </thead>
+            <tbody id="standingsBody"></tbody>
+          </table>
+        </div>
+        <p class="t-legend">
+          Victoria 1 · Tablas ½ · Derrota 0. Los descansos cuentan 1 punto.
+          Desempate: resultado directo y después número de victorias.
+        </p>
+      </section>
+
+      <section class="t-card t-rounds" aria-labelledby="roundsTitle">
+        <div class="t-card-head">
+          <h2 id="roundsTitle">Calendario</h2>
+          <button id="refreshBtn" class="btn btn-ghost btn-sm" type="button">Actualizar</button>
+        </div>
+        <p class="rounds-hint">
+          Quien juega con blancas crea la sala. El rival espera a que aparezca el
+          código y pulsa «Unirme».
+        </p>
+        <div id="rounds" class="rounds"></div>
+      </section>
+    </div>
+
+    <details class="t-card t-admin" id="adminPanel">
+      <summary>Administración del torneo</summary>
+      <div class="admin-body">
+        <div class="admin-block">
+          <h3>Clave de organizador</h3>
+          <p class="admin-hint">
+            Permite corregir resultados y cambiar la lista de jugadores. Se
+            guarda solo en este navegador.
+          </p>
+          <form id="keyForm" class="admin-row" autocomplete="off">
+            <label class="sr-only" for="keyInput">Clave de organizador</label>
+            <input id="keyInput" type="password" placeholder="Clave" autocomplete="current-password">
+            <button class="btn btn-secondary btn-sm" type="submit">Guardar clave</button>
+          </form>
+        </div>
+
+        <div class="admin-block">
+          <h3>Jugadores</h3>
+          <p class="admin-hint">
+            Un nombre por línea. Puedes añadir jugadores en cualquier momento;
+            los resultados ya guardados se conservan.
+          </p>
+          <form id="rosterForm" class="admin-row admin-row-column">
+            <label class="sr-only" for="rosterInput">Jugadores, uno por línea</label>
+            <textarea id="rosterInput" rows="6" spellcheck="false"></textarea>
+            <button class="btn btn-secondary btn-sm" type="submit">Guardar jugadores</button>
+          </form>
+        </div>
+      </div>
+    </details>
+
+    <section class="t-card t-help" aria-labelledby="helpTitle">
+      <h2 id="helpTitle">Cómo funciona</h2>
+      <ol class="help-list">
+        <li>Quien tiene <strong>blancas</strong> pulsa «Crear sala» en su partida.</li>
+        <li>El rival ve el código en esta página y pulsa «Unirme».</li>
+        <li>Al terminar, el resultado y los tiempos se guardan automáticamente.</li>
+        <li>Cualquiera puede mirar las partidas en curso con «Ver».</li>
+        <li>El organizador puede corregir un resultado o descargar el PGN.</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Torneo familiar · Ajedrez Online</span>
+    <span id="footerStorage"></span>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/torneo.js"></script>
+</body>
+</html>

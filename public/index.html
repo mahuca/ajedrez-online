@@ -35,6 +35,9 @@
           <li><span aria-hidden="true">♛</span> Reglas completas</li>
           <li><span aria-hidden="true">♚</span> Reconexión</li>
         </ul>
+        <p class="hero-link">
+          ¿Jugáis un torneo? <a href="/torneo">Ver el torneo familiar →</a>
+        </p>
       </div>
 
       <div class="lobby-card">
@@ -79,6 +82,7 @@
           </button>
         </div>
         <div class="game-actions">
+          <a id="tournamentLink" class="btn btn-ghost btn-sm" href="/torneo" hidden>← Torneo</a>
           <span id="connectionBadge" class="connection-badge" title="Estado de la conexión">
             <span class="dot" aria-hidden="true"></span>
             <span id="connectionText">En línea</span>
@@ -89,6 +93,11 @@
         </div>
       </div>
 
+      <p id="spectatorNote" class="spectator-note" hidden>
+        <span aria-hidden="true">👁</span>
+        Estás mirando la partida como espectador. No puedes mover.
+      </p>
+
       <div class="players">
         <div id="topPlayer" class="player-bar">
           <div class="player-identity">
@@ -97,6 +106,8 @@
             <span id="topTag" class="player-tag">Rival</span>
           </div>
           <div id="topCaptured" class="captured" aria-label="Capturas del rival"></div>
+          <span id="topClock" class="player-clock" aria-label="Tiempo de reflexión del rival"
+                title="Tiempo total pensado">0:00</span>
           <div id="topMaterial" class="material" aria-live="polite"></div>
         </div>
 
@@ -148,13 +159,18 @@
             <span id="bottomTag" class="player-tag">Tú</span>
           </div>
           <div id="bottomCaptured" class="captured" aria-label="Tus capturas"></div>
+          <span id="bottomClock" class="player-clock" aria-label="Tu tiempo de reflexión"
+                title="Tiempo total pensado">0:00</span>
           <div id="bottomMaterial" class="material" aria-live="polite"></div>
         </div>
       </div>
 
       <div class="game-status">
         <p id="statusText" class="status-text" aria-live="polite">Conectando…</p>
-        <div id="moveList" class="move-list" aria-label="Jugadas de la partida"></div>
+        <div class="move-list-wrap">
+          <div id="moveList" class="move-list" aria-label="Jugadas de la partida"></div>
+          <p id="timeSummary" class="time-summary" hidden></p>
+        </div>
       </div>
     </section>
   </main>

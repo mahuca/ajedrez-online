@@ -11,3 +11,13 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 24
+      # Resultados del torneo en PostgreSQL (Neon). Sin ella, se guardan en memoria.
+      - key: DATABASE_URL
+        sync: false
+      # Clave del organizador para corregir resultados. Sin ella, la administración
+      # del torneo queda desactivada.
+      - key: TORNEO_CLAVE
+        sync: false
+      # Jugadores iniciales del torneo, separados por comas.
+      - key: TORNEO_JUGADORES
+        sync: false

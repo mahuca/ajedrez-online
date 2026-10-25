@@ -10,9 +10,61 @@ const MAX_NAME_LENGTH = 20;
 const ROOM_TTL_MS = 2 * 60 * 60 * 1000;        // 2 horas sin actividad
 const EMPTY_ROOM_TTL_MS = 10 * 60 * 1000;      // 10 minutos sin jugadores
 const DISCONNECT_FORFEIT_MS = 3 * 60 * 1000;   // 3 minutos desconectado en partida
+const MAX_SPECTATORS = 50;
+const HISTORY_LIMIT = 400;
 
 function emptyStatus() {
   return { over: false, reason: null, winner: null, inCheck: false };
+}
+
+/*
+ * Cronómetro de reflexión: cuenta hacia arriba y no limita la partida.
+ * Guarda el tiempo acumulado de cada color y el de cada jugada.
+ */
+function emptyTiming() {
+  return { white: 0, black: 0, moves: [], partial: 0, runningSince: null };
+}
+
+function bothConnected(room) {
+  return !!(room.players.white && room.players.black
+    && room.players.white.connected && room.players.black.connected);
+}
+
+function startTiming(room, now = Date.now()) {
+  if (!room || room.status.over) return false;
+  if (room.timing.runningSince !== null) return false;
+  if (!bothConnected(room)) return false;
+  room.timing.runningSince = now;
+  return true;
+}
+
+function pauseTiming(room, now = Date.now()) {
+  const timing = room.timing;
+  if (!timing || timing.runningSince === null) return false;
+  const elapsed = Math.max(0, now - timing.runningSince);
+  const turn = room.state.turn;
+  timing[turn] += elapsed;
+  timing.partial += elapsed;
+  timing.runningSince = null;
+  return true;
+}
+
+function stopTiming(room) {
+  if (room && room.timing) room.timing.runningSince = null;
+}
+
+function recordMove(room, color, now = Date.now()) {
+  const timing = room.timing;
+  const elapsed = timing.runningSince === null
+    ? 0
+    : Math.max(0, now - timing.runningSince);
+  timing[color] += elapsed;
+  timing.partial += elapsed;
+  timing.moves.push(timing.partial);
+  if (timing.moves.length > HISTORY_LIMIT) timing.moves.shift();
+  timing.partial = 0;
+  timing.runningSince = null;
+  if (!room.status.over && bothConnected(room)) timing.runningSince = now;
 }
 
 function sanitizeName(raw, fallback) {
@@ -59,6 +111,10 @@ class RoomManager {
     return normalized ? this.rooms.get(normalized) || null : null;
   }
 
+  all() {
+    return [...this.rooms.values()];
+  }
+
   findPlayer(room, token) {
     if (!room || typeof token !== 'string') return null;
     for (const color of ['white', 'black']) {
@@ -73,12 +129,13 @@ class RoomManager {
     return found ? found.color : null;
   }
 
-  createRoom(name) {
+  createRoom(name, options = {}) {
     let code;
     do {
       code = randomCode();
     } while (this.rooms.has(code));
 
+    const pairing = options.pairing || null;
     const now = Date.now();
     const room = {
       code,
@@ -86,6 +143,13 @@ class RoomManager {
       state: engine.newState(),
       status: emptyStatus(),
       history: [],
+      moves: [],
+      timing: emptyTiming(),
+      spectators: new Set(),
+      pairingId: pairing ? pairing.id : null,
+      pairing: pairing ? { white: pairing.white, black: pairing.black } : null,
+      saved: false,
+      saveError: null,
       rematchVotes: { white: false, black: false },
       createdAt: now,
       updatedAt: now,
@@ -94,7 +158,7 @@ class RoomManager {
 
     const player = {
       token: randomToken(),
-      name: sanitizeName(name, 'Blancas'),
+      name: sanitizeName(pairing ? pairing.white : name, 'Blancas'),
       socketId: null,
       connected: false,
       joinedAt: now,
@@ -129,9 +193,11 @@ class RoomManager {
     if (!color) return { error: 'full' };
 
     const now = Date.now();
+    const fallback = color === 'white' ? 'Blancas' : 'Negras';
+    const forced = room.pairing ? room.pairing[color] : null;
     const player = {
       token: randomToken(),
-      name: sanitizeName(name, color === 'white' ? 'Blancas' : 'Negras'),
+      name: forced ? sanitizeName(forced, fallback) : sanitizeName(name, fallback),
       socketId: null,
       connected: false,
       joinedAt: now,
@@ -143,14 +209,15 @@ class RoomManager {
     return { room, player, color, resumed: false };
   }
 
-  attach(room, player, socketId) {
+  attach(room, player, socketId, now = Date.now()) {
     player.socketId = socketId;
     player.connected = true;
     player.disconnectedAt = null;
-    room.lastActivity = Date.now();
+    room.lastActivity = now;
+    startTiming(room, now);
   }
 
-  disconnect(room, token, socketId) {
+  disconnect(room, token, socketId, now = Date.now()) {
     const found = this.findPlayer(room, token);
     if (!found) return null;
     // Si el jugador ya se reconectó con otro socket, no lo marcamos desconectado
@@ -158,8 +225,10 @@ class RoomManager {
       return null;
     }
     found.player.connected = false;
-    found.player.disconnectedAt = Date.now();
-    room.lastActivity = Date.now();
+    found.player.disconnectedAt = now;
+    room.lastActivity = now;
+    // El cronómetro de reflexión se pausa mientras falte alguien.
+    pauseTiming(room, now);
     return found;
   }
 
@@ -170,6 +239,7 @@ class RoomManager {
     room.players[found.color] = null;
     room.rematchVotes[found.color] = false;
     room.lastActivity = Date.now();
+    stopTiming(room);
 
     if (!room.status.over && room.players[found.color === 'white' ? 'black' : 'white']) {
       room.status = {
@@ -187,7 +257,7 @@ class RoomManager {
     return found;
   }
 
-  applyMove(room, color, from, to, promotion) {
+  applyMove(room, color, from, to, promotion, now = Date.now()) {
     if (!room) return { ok: false, error: 'not_found' };
     if (room.status.over) return { ok: false, error: 'game_over' };
     if (room.state.turn !== color) return { ok: false, error: 'not_your_turn' };
@@ -195,12 +265,20 @@ class RoomManager {
     const result = engine.validateAndApply(room.state, from, to, promotion);
     if (!result.ok) return result;
 
+    recordMove(room, color, now);
     room.state = result.state;
     room.status = result.status;
     room.history.push(result.move.notation);
-    if (room.history.length > 400) room.history.shift();
-    room.updatedAt = Date.now();
-    room.lastActivity = Date.now();
+    if (room.history.length > HISTORY_LIMIT) room.history.shift();
+    room.moves.push({
+      from: result.move.from,
+      to: result.move.to,
+      promotion: result.move.promotion
+    });
+    if (room.moves.length > HISTORY_LIMIT) room.moves.shift();
+    if (room.status.over) stopTiming(room);
+    room.updatedAt = now;
+    room.lastActivity = now;
     return result;
   }
 
@@ -212,6 +290,7 @@ class RoomManager {
       winner: engine.other(color),
       inCheck: engine.isInCheck(room.state.board, room.state.turn)
     };
+    stopTiming(room);
     room.updatedAt = Date.now();
     room.lastActivity = Date.now();
     return true;
@@ -235,9 +314,12 @@ class RoomManager {
     room.state = engine.newState();
     room.status = emptyStatus();
     room.history = [];
+    room.moves = [];
+    room.timing = emptyTiming();
     room.rematchVotes = { white: false, black: false };
     room.updatedAt = Date.now();
     room.lastActivity = Date.now();
+    startTiming(room);
     return { ok: true, started: true };
   }
 
@@ -263,11 +345,36 @@ class RoomManager {
         winner,
         inCheck: engine.isInCheck(room.state.board, room.state.turn)
       };
+      stopTiming(room);
       room.updatedAt = now;
       room.lastActivity = now;
       changed.push(room);
     }
     return changed;
+  }
+
+  addSpectator(room, socketId) {
+    if (!room) return { ok: false, error: 'not_found' };
+    if (room.spectators.has(socketId)) return { ok: true };
+    if (room.spectators.size >= MAX_SPECTATORS) {
+      return { ok: false, error: 'spectators_full' };
+    }
+    room.spectators.add(socketId);
+    room.lastActivity = Date.now();
+    return { ok: true };
+  }
+
+  removeSpectator(room, socketId) {
+    if (!room || !socketId) return false;
+    return room.spectators.delete(socketId);
+  }
+
+  findSpectatorRooms(socketId) {
+    const found = [];
+    for (const room of this.rooms.values()) {
+      if (room.spectators.has(socketId)) found.push(room);
+    }
+    return found;
   }
 
   cleanup(now = Date.now()) {
@@ -295,6 +402,17 @@ class RoomManager {
       status: room.status,
       history: room.history,
       players,
+      pairingId: room.pairingId,
+      pairing: room.pairing,
+      spectators: room.spectators.size,
+      timing: {
+        white: room.timing.white,
+        black: room.timing.black,
+        moves: room.timing.moves,
+        partial: room.timing.partial,
+        runningSince: room.timing.runningSince,
+        serverNow: Date.now()
+      },
       rematchVotes: { ...room.rematchVotes }
     };
   }
@@ -305,7 +423,13 @@ module.exports = {
   normalizeCode,
   sanitizeName,
   emptyStatus,
+  emptyTiming,
+  startTiming,
+  pauseTiming,
+  stopTiming,
+  recordMove,
   CODE_LENGTH,
+  MAX_SPECTATORS,
   ROOM_TTL_MS,
   EMPTY_ROOM_TTL_MS,
   DISCONNECT_FORFEIT_MS
