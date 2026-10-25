@@ -14,7 +14,9 @@ const NAME_MAX = 20;
 const BYE = 'descanso';
 const RESULTS = ['white', 'black', 'draw'];
 
-const DEFAULT_PLAYERS = ['Abuelo', 'Manuel', 'Fernan', 'Alejandro'];
+const DEFAULT_PLAYERS = [
+  'Abuelo', 'Manuel', 'Fernan', 'Alejandro', 'Alvaro', 'Alberto'
+];
 
 function cleanName(raw) {
   if (typeof raw !== 'string') return '';

@@ -9,6 +9,7 @@ let instance;
 let port;
 let base;
 const sockets = [];
+let pairing = null;
 
 function connect() {
   return new Promise((resolve, reject) => {
@@ -72,11 +73,23 @@ test('estado inicial del torneo', async () => {
   const state = await response.json();
 
   assert.equal(state.ok, true);
-  assert.deepEqual(state.players, ['Abuelo', 'Manuel', 'Fernan', 'Alejandro']);
-  assert.equal(state.schedule.filter(game => !game.bye).length, 12);
-  assert.equal(state.standings.length, 4);
+  assert.deepEqual(state.players, [
+    'Abuelo', 'Manuel', 'Fernan', 'Alejandro', 'Alvaro', 'Alberto'
+  ]);
+  assert.equal(state.schedule.filter(game => !game.bye).length, 15);
+  assert.equal(state.schedule.filter(game => game.bye).length, 0);
+  assert.equal(new Set(state.schedule.map(game => game.round)).size, 5);
+  assert.equal(state.standings.length, 6);
   assert.equal(state.storage.kind, 'memory');
   assert.equal(state.editable, false, 'sin clave configurada no se puede editar');
+
+  // Se elige un emparejamiento entre los cuatro jugadores que siguen en la
+  // plantilla tras la prueba de cambio de jugadores, para no bloquearla.
+  const kept = ['Abuelo', 'Manuel', 'Fernan', 'Alejandro'];
+  pairing = state.schedule.find(
+    game => !game.bye && kept.includes(game.white) && kept.includes(game.black)
+  );
+  assert.ok(pairing, 'hay emparejamientos entre los jugadores iniciales');
 });
 
 test('la página del torneo se sirve y enlaza la hoja de estilos', async () => {
@@ -105,23 +118,23 @@ test('sala vinculada al torneo con espectador y guardado automático', async () 
 
   const created = await emit(white, 'room:create', {
     name: 'otro nombre',
-    partida: 'Abuelo|Alejandro'
+    partida: pairing.id
   });
   assert.equal(created.ok, true);
-  assert.equal(created.room.pairingId, 'Abuelo|Alejandro');
-  assert.equal(created.room.players.white.name, 'Abuelo', 'el nombre lo fija el calendario');
+  assert.equal(created.room.pairingId, pairing.id);
+  assert.equal(created.room.players.white.name, pairing.white, 'el nombre lo fija el calendario');
 
   const joined = await emit(black, 'room:join', {
     code: created.code,
-    name: 'Alejandro'
+    name: pairing.black
   });
   assert.equal(joined.ok, true);
   assert.equal(joined.color, 'black');
-  assert.equal(joined.room.players.black.name, 'Alejandro');
+  assert.equal(joined.room.players.black.name, pairing.black);
 
   const second = await emit(await connect(), 'room:create', {
-    name: 'Abuelo',
-    partida: 'Abuelo|Alejandro'
+    name: pairing.white,
+    partida: pairing.id
   });
   assert.equal(second.ok, false);
   assert.equal(second.error, 'pairing_active');
@@ -150,19 +163,19 @@ test('sala vinculada al torneo con espectador y guardado automático', async () 
 
   const response = await fetch(`${base}/api/torneo`);
   const state = await response.json();
-  const record = state.results['Abuelo|Alejandro'];
+  const record = state.results[pairing.id];
   assert.ok(record, 'el resultado se guarda solo');
   assert.equal(record.result, 'black', 'ganan negras por rendición de blancas');
   assert.equal(record.source, 'partida');
-  assert.equal(state.standings.find(row => row.name === 'Alejandro').total, 1);
+  assert.equal(state.standings.find(row => row.name === pairing.black).total, 1);
 
   const pgnResponse = await fetch(
-    `${base}/api/torneo/partida/` + encodeURIComponent('Abuelo|Alejandro') + '/pgn'
+    `${base}/api/torneo/partida/` + encodeURIComponent(pairing.id) + '/pgn'
   );
   assert.equal(pgnResponse.status, 200);
   assert.match(pgnResponse.headers.get('content-type'), /chess-pgn/);
   const pgn = await pgnResponse.text();
-  assert.match(pgn, /\[White "Abuelo"\]/);
+  assert.ok(pgn.includes(`[White "${pairing.white}"]`), 'el PGN usa el nombre del calendario');
   assert.match(pgn, /\[Result "0-1"\]/);
   assert.match(pgn, /1\. e2-e4|1\. e4/);
 });
@@ -177,8 +190,8 @@ test('emparejamiento inexistente y partida ya jugada', async () => {
   assert.equal(unknown.error, 'unknown_pairing');
 
   const played = await emit(socket, 'room:create', {
-    name: 'Abuelo',
-    partida: 'Abuelo|Alejandro'
+    name: pairing.white,
+    partida: pairing.id
   });
   assert.equal(played.ok, false);
   assert.equal(played.error, 'pairing_played');
@@ -186,7 +199,9 @@ test('emparejamiento inexistente y partida ya jugada', async () => {
 
 test('el organizador corrige y anula resultados con la clave', async () => {
   process.env.TORNEO_CLAVE = 'clave-de-prueba';
-  const id = encodeURIComponent('Manuel|Fernan');
+  const state0 = await (await fetch(`${base}/api/torneo`)).json();
+  const target = state0.schedule.find(game => !game.bye && game.id !== pairing.id);
+  const id = encodeURIComponent(target.id);
 
   try {
     const wrong = await fetch(`${base}/api/torneo/partida/${id}`, {
@@ -203,8 +218,8 @@ test('el organizador corrige y anula resultados con la clave', async () => {
     });
     assert.equal(saved.status, 200);
     const state = await saved.json();
-    assert.equal(state.results['Manuel|Fernan'].result, 'draw');
-    assert.equal(state.results['Manuel|Fernan'].source, 'manual');
+    assert.equal(state.results[target.id].result, 'draw');
+    assert.equal(state.results[target.id].source, 'manual');
     assert.equal(state.editable, true);
 
     const clear = await fetch(`${base}/api/torneo/partida/${id}`, {
@@ -214,7 +229,7 @@ test('el organizador corrige y anula resultados con la clave', async () => {
     });
     assert.equal(clear.status, 200);
     const cleared = await clear.json();
-    assert.equal(cleared.results['Manuel|Fernan'], undefined);
+    assert.equal(cleared.results[target.id], undefined);
   } finally {
     delete process.env.TORNEO_CLAVE;
   }
@@ -242,12 +257,19 @@ test('cambiar la plantilla y bloquear jugadores con resultados', async () => {
     const blocked = await fetch(`${base}/api/torneo/jugadores`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify({ players: ['Manuel', 'Fernan', 'Alejandro'] })
+      body: JSON.stringify({
+        players: ['Abuelo', 'Manuel', 'Fernan', 'Alejandro', 'Ana'].filter(
+          name => name !== pairing.white
+        )
+      })
     });
     assert.equal(blocked.status, 409);
     const body = await blocked.json();
     assert.equal(body.error, 'jugador_con_resultados');
-    assert.equal(body.player, 'Abuelo');
+    assert.ok(
+      [pairing.white, pairing.black].includes(body.player),
+      'informa del jugador que ya tiene resultados'
+    );
   } finally {
     delete process.env.TORNEO_CLAVE;
   }

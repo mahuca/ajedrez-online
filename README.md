@@ -136,7 +136,7 @@ Notas del plan gratuito:
 | `NODE_VERSION` | `24` (en `render.yaml`) | Versión de Node en Render. |
 | `DATABASE_URL` | vacío | Cadena de PostgreSQL donde se guardan resultados del torneo. Sin ella, se guardan en memoria y se pierden al reiniciar. |
 | `TORNEO_CLAVE` | vacío | Clave del organizador para corregir resultados y cambiar jugadores. Sin ella, la administración del torneo queda desactivada. |
-| `TORNEO_JUGADORES` | `Abuelo,Manuel,Fernan,Alejandro` | Lista inicial de jugadores, separada por comas. |
+| `TORNEO_JUGADORES` | `Abuelo,Manuel,Fernan,Alejandro,Alvaro,Alberto` | Lista inicial de jugadores, separada por comas. |
 | `PG_POOL_MAX` | `4` | Conexiones máximas a PostgreSQL. |
 
 `DATABASE_URL` y `TORNEO_CLAVE` son secretos: márcalos como **Secret** en Render
