@@ -146,9 +146,14 @@ y no los escribas en el repositorio.
 
 La página `/torneo` organiza una liguilla entre los jugadores configurados:
 
-- **Calendario automático** con el sistema circular. Con 4 jugadores o menos se
-  juega ida y vuelta (12 partidas, 6 rondas); con 5 o más, ida sola. Si el número
-  es impar, cada ronda descansa uno y ese descanso vale 1 punto.
+- **Calendario automático** con el sistema circular, siempre **ida y vuelta**:
+  cada pareja juega dos partidas, una con cada color. Con 6 jugadores son 10
+  rondas y 30 partidas (cada uno 5 con blancas y 5 con negras). Si el número es
+  impar, cada ronda descansa uno y ese descanso vale 1 punto.
+- **La revancha es la vuelta**: al aceptarla se cambian los colores y el segundo
+  resultado se guarda en su propia casilla, sin pisar la ida.
+- **Pausa de 20 minutos** en las salas del torneo si alguien se desconecta (las
+  partidas sueltas 1v1 mantienen los 3 minutos).
 - **Clasificación** con victoria 1, tablas ½ y derrota 0. Desempate: resultado
   directo entre los empatados y después número de victorias.
 - **Resultados por pareja y colores**, no por ronda. Así se puede añadir o quitar

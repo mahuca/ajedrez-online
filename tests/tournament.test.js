@@ -48,13 +48,43 @@ test('calendario con número impar: ida sola y un descanso por jugador', () => {
   for (const name of FIVE) assert.equal(perPlayer[name], 1, name + ' descansa una vez');
 });
 
-test('calendario para seis jugadores sin descansos', () => {
+test('calendario para seis jugadores sin descansos (ida sola)', () => {
   const players = FOUR.concat(['Ana', 'Luis']);
   const schedule = tournament.buildSchedule(players, { doubleRound: false });
 
   assert.equal(schedule.filter(game => !game.bye).length, 15);
   assert.equal(schedule.filter(game => game.bye).length, 0);
   assert.equal(new Set(schedule.map(game => game.round)).size, 5);
+});
+
+test('por defecto se juega ida y vuelta: 6 jugadores → 30 partidas', () => {
+  const players = ['Abuelo', 'Manuel', 'Fernan', 'Alejandro', 'Alvaro', 'Alberto'];
+  const schedule = tournament.buildSchedule(players);
+  const games = schedule.filter(game => !game.bye);
+
+  assert.equal(games.length, 30, 'cada pareja juega dos partidas');
+  assert.equal(schedule.filter(game => game.bye).length, 0);
+  assert.equal(new Set(schedule.map(game => game.round)).size, 10, '10 rondas');
+  assert.equal(new Set(games.map(game => game.id)).size, 30, 'identificadores únicos');
+
+  // Cada partida tiene su vuelta con los colores cambiados.
+  for (const game of games) {
+    assert.ok(
+      games.some(other => other.white === game.black && other.black === game.white),
+      'existe la vuelta de ' + game.id
+    );
+  }
+
+  const white = {};
+  const black = {};
+  for (const game of games) {
+    white[game.white] = (white[game.white] || 0) + 1;
+    black[game.black] = (black[game.black] || 0) + 1;
+  }
+  for (const name of players) {
+    assert.equal(white[name], 5, name + ' juega 5 con blancas');
+    assert.equal(black[name], 5, name + ' juega 5 con negras');
+  }
 });
 
 test('los identificadores de partida son estables y únicos', () => {

@@ -10,6 +10,7 @@ const MAX_NAME_LENGTH = 20;
 const ROOM_TTL_MS = 2 * 60 * 60 * 1000;        // 2 horas sin actividad
 const EMPTY_ROOM_TTL_MS = 10 * 60 * 1000;      // 10 minutos sin jugadores
 const DISCONNECT_FORFEIT_MS = 3 * 60 * 1000;   // 3 minutos desconectado en partida
+const TOURNAMENT_FORFEIT_MS = 20 * 60 * 1000;  // 20 minutos en salas del torneo
 const MAX_SPECTATORS = 50;
 const HISTORY_LIMIT = 400;
 
@@ -149,6 +150,7 @@ class RoomManager {
       pairingId: pairing ? pairing.id : null,
       pairing: pairing ? { white: pairing.white, black: pairing.black } : null,
       saved: false,
+      savedIds: new Set(),
       saveError: null,
       rematchVotes: { white: false, black: false },
       createdAt: now,
@@ -306,11 +308,19 @@ class RoomManager {
     const both = room.rematchVotes.white && room.rematchVotes.black;
     if (!both) return { ok: true, started: false };
 
-    // Intercambiar colores y empezar de cero
+    // Intercambiar colores y empezar de cero. La revancha es la vuelta del
+    // torneo: se invierte también el emparejamiento para guardar el segundo
+    // resultado en su propia casilla (B|A) sin pisar la ida (A|B).
     const white = room.players.white;
     const black = room.players.black;
     room.players.white = black;
     room.players.black = white;
+    if (room.pairing) {
+      room.pairing = { white: room.pairing.black, black: room.pairing.white };
+      room.pairingId = room.pairing.white + '|' + room.pairing.black;
+    }
+    room.saved = false;
+    room.saveError = null;
     room.state = engine.newState();
     room.status = emptyStatus();
     room.history = [];
@@ -327,11 +337,14 @@ class RoomManager {
     const changed = [];
     for (const room of this.rooms.values()) {
       if (room.status.over) continue;
+      // Las partidas del torneo se juegan cuando cada uno puede: damos 20
+      // minutos para una pausa. Las salas sueltas 1v1 siguen con 3 minutos.
+      const grace = room.pairingId ? TOURNAMENT_FORFEIT_MS : DISCONNECT_FORFEIT_MS;
       const missing = [];
       for (const color of ['white', 'black']) {
         const player = room.players[color];
         if (player && !player.connected && player.disconnectedAt
-            && now - player.disconnectedAt > DISCONNECT_FORFEIT_MS) {
+            && now - player.disconnectedAt > grace) {
           missing.push(color);
         }
       }

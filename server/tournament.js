@@ -100,8 +100,10 @@ function mirrorRound(games) {
 }
 
 function buildSchedule(players, options = {}) {
+  // Torneo familiar: siempre ida y vuelta, así cada pareja juega dos partidas
+  // (una con cada color). Con 6 jugadores son 10 rondas y 30 partidas.
   const doubleRound = options.doubleRound === undefined
-    ? players.length <= 4
+    ? true
     : !!options.doubleRound;
 
   const firstLeg = circleRounds(players);

@@ -76,9 +76,9 @@ test('estado inicial del torneo', async () => {
   assert.deepEqual(state.players, [
     'Abuelo', 'Manuel', 'Fernan', 'Alejandro', 'Alvaro', 'Alberto'
   ]);
-  assert.equal(state.schedule.filter(game => !game.bye).length, 15);
+  assert.equal(state.schedule.filter(game => !game.bye).length, 30);
   assert.equal(state.schedule.filter(game => game.bye).length, 0);
-  assert.equal(new Set(state.schedule.map(game => game.round)).size, 5);
+  assert.equal(new Set(state.schedule.map(game => game.round)).size, 10);
   assert.equal(state.standings.length, 6);
   assert.equal(state.storage.kind, 'memory');
   assert.equal(state.editable, false, 'sin clave configurada no se puede editar');
@@ -180,6 +180,69 @@ test('sala vinculada al torneo con espectador y guardado automático', async () 
   assert.match(pgn, /1\. e2-e4|1\. e4/);
 });
 
+test('la revancha es la vuelta: colores invertidos y resultado aparte', async () => {
+  const state0 = await (await fetch(`${base}/api/torneo`)).json();
+  const kept = ['Abuelo', 'Manuel', 'Fernan', 'Alejandro'];
+
+  // Una casilla libre, con su vuelta también libre.
+  const leg1 = state0.schedule.find((game) => {
+    if (game.bye) return false;
+    if (!kept.includes(game.white) || !kept.includes(game.black)) return false;
+    const reverse = game.black + '|' + game.white;
+    return !state0.results[game.id] && !state0.results[reverse];
+  });
+  assert.ok(leg1, 'hay una casilla libre con vuelta');
+  const leg2Id = leg1.black + '|' + leg1.white;
+  assert.ok(state0.schedule.some(game => game.id === leg2Id), 'la vuelta está en el calendario');
+
+  const a = await connect();
+  const b = await connect();
+
+  const created = await emit(a, 'room:create', { name: leg1.white, partida: leg1.id });
+  assert.equal(created.ok, true);
+  assert.equal(created.room.pairingId, leg1.id);
+
+  const joined = await emit(b, 'room:join', { code: created.code, name: leg1.black });
+  assert.equal(joined.ok, true);
+  assert.equal(joined.room.pairingId, leg1.id);
+
+  // Ida: abandonan blancas, gana quien lleva negras.
+  await emit(a, 'game:resign', {});
+  await wait(250);
+
+  let state = await (await fetch(`${base}/api/torneo`)).json();
+  assert.equal(state.results[leg1.id].result, 'black', 'la ida se guarda');
+
+  // Revancha: votan los dos y se intercambian los colores.
+  const first = await emit(a, 'game:rematch', {});
+  assert.equal(first.ok, true);
+  assert.equal(first.started, false);
+
+  const swapped = waitForUpdate(a, payload => payload.pairingId === leg2Id);
+  const second = await emit(b, 'game:rematch', {});
+  assert.equal(second.ok, true);
+  assert.equal(second.started, true);
+
+  const room = await swapped;
+  assert.equal(room.pairingId, leg2Id, 'la vuelta tiene su propia casilla');
+  assert.equal(room.players.white.name, leg1.black, 'quien tenía negras lleva ahora blancas');
+  assert.equal(room.players.black.name, leg1.white);
+  assert.equal(room.history.length, 0, 'tablero nuevo');
+
+  // Vuelta: abandonan blancas (el que ganó la ida), gana el otro.
+  await emit(b, 'game:resign', {});
+  await wait(300);
+
+  state = await (await fetch(`${base}/api/torneo`)).json();
+  assert.equal(state.results[leg1.id].result, 'black', 'la ida no se pisa');
+  assert.equal(state.results[leg2Id].result, 'black', 'la vuelta se guarda aparte');
+
+  const one = state.standings.find(row => row.name === leg1.white);
+  const two = state.standings.find(row => row.name === leg1.black);
+  assert.equal(one.total, 1, 'una victoria cada uno');
+  assert.equal(two.total, 1);
+});
+
 test('emparejamiento inexistente y partida ya jugada', async () => {
   const socket = await connect();
   const unknown = await emit(socket, 'room:create', {
@@ -251,7 +314,7 @@ test('cambiar la plantilla y bloquear jugadores con resultados', async () => {
     assert.equal(added.status, 200);
     const state = await added.json();
     assert.equal(state.players.length, 5);
-    assert.equal(state.schedule.filter(game => !game.bye).length, 10, 'ida sola con 5');
+    assert.equal(state.schedule.filter(game => !game.bye).length, 20, 'ida y vuelta con 5');
     assert.ok(state.schedule.some(game => game.bye), 'hay descansos');
 
     const blocked = await fetch(`${base}/api/torneo/jugadores`, {

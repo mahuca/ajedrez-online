@@ -132,15 +132,37 @@ function createServer(options = {}) {
     return { ok: true };
   }
 
-  function saveFinishedGame(room) {
-    if (!room || room.saved || !room.pairingId || !room.status.over) return;
-    room.saved = true;
+  async function saveFinishedGame(room) {
+    if (!room || room.saved || room.saving || !room.pairingId || !room.status.over) return;
+    room.saving = true;
 
     const white = room.pairing ? room.pairing.white : '';
     const black = room.pairing ? room.pairing.black : '';
     const result = room.status.winner === 'white'
       ? 'white'
       : room.status.winner === 'black' ? 'black' : 'draw';
+
+    try {
+      // Solo se guardan partidas que existen en el calendario. Al invertirse
+      // los colores en la revancha, la vuelta tiene su propia casilla (B|A).
+      const { schedule } = await getSchedule();
+      if (!schedule.some(game => !game.bye && game.id === room.pairingId)) {
+        room.saved = true;
+        log('Partida sin casilla en el calendario, no se guarda:', room.pairingId);
+        return;
+      }
+      // Una misma casilla no se escribe dos veces desde la misma sala: la ida
+      // y la vuelta quedan guardadas aunque luego se juegue otra revancha.
+      if (room.savedIds && room.savedIds.has(room.pairingId)) {
+        room.saved = true;
+        log('Casilla ya guardada desde esta sala:', room.pairingId);
+        return;
+      }
+      room.saved = true;
+      if (room.savedIds) room.savedIds.add(room.pairingId);
+    } finally {
+      room.saving = false;
+    }
 
     let pgn = null;
     try {
@@ -355,7 +377,9 @@ function createServer(options = {}) {
   function broadcast(room) {
     if (!room) return;
     io.to(room.code).emit('room:update', rooms.publicRoom(room));
-    saveFinishedGame(room);
+    saveFinishedGame(room).catch((error) => {
+      console.error('No se pudo guardar el resultado del torneo:', error.message);
+    });
   }
 
   function bind(socket, room, player) {
