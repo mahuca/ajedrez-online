@@ -187,6 +187,17 @@
     emit('color', payload.color);
   });
 
+  // El organizador cerró la sala (partida colgada): se suelta la sesión y se
+  // vuelve al calendario para poder empezar otra.
+  socket.on('room:closed', () => {
+    clearSession();
+    room = null;
+    autoResume = false;
+    needsResume = false;
+    emit('closed');
+    window.location.href = '/torneo';
+  });
+
   // ==================== API ====================
 
   async function createRoom(name) {

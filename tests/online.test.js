@@ -272,3 +272,64 @@ test('HTTP: salud, portada y enlace de sala', async () => {
   assert.equal(engineFile.status, 200);
   assert.match(await engineFile.text(), /validateAndApply/);
 });
+
+test('solo una sala de torneo a la vez y cierre por el organizador', async () => {
+  const a = await connect();
+  const b = await connect();
+
+  // Primera partida del torneo: se crea sin problema.
+  const created = await emit(a, 'room:create', {
+    name: 'Abuelo',
+    partida: 'Abuelo|Manuel'
+  });
+  assert.equal(created.ok, true);
+
+  // Cualquier otro emparejamiento queda en espera mientras haya una en curso.
+  const second = await emit(b, 'room:create', {
+    name: 'Fernan',
+    partida: 'Fernan|Manuel'
+  });
+  assert.equal(second.ok, false);
+  assert.equal(second.error, 'sala_ocupada');
+  assert.equal(second.code, created.code);
+
+  // Sin clave configurada no hay cierre administrativo.
+  const noKey = await emit(b, 'room:close', { code: created.code });
+  assert.equal(noKey.ok, false);
+  assert.equal(noKey.error, 'clave_no_configurada');
+
+  process.env.TORNEO_CLAVE = 'clave-de-prueba';
+
+  const wrong = await emit(b, 'room:close', {
+    code: created.code,
+    clave: 'otra-clave'
+  });
+  assert.equal(wrong.ok, false);
+  assert.equal(wrong.error, 'clave_incorrecta');
+
+  // El organizador cierra: los de dentro reciben el aviso y la sala desaparece.
+  const closedEvent = nextEvent(a, 'room:closed');
+  const closed = await emit(b, 'room:close', {
+    code: created.code,
+    clave: 'clave-de-prueba'
+  });
+  assert.equal(closed.ok, true);
+  assert.equal((await closedEvent).code, created.code);
+
+  const gone = await emit(b, 'room:watch', { code: created.code });
+  assert.equal(gone.error, 'not_found');
+
+  // El emparejamiento vuelve a estar libre.
+  const free = await emit(b, 'room:create', {
+    name: 'Fernan',
+    partida: 'Fernan|Manuel'
+  });
+  assert.equal(free.ok, true);
+
+  // Cerrar una sala no guarda resultado en el torneo.
+  const state = await (await fetch(`http://127.0.0.1:${port}/api/torneo`)).json();
+  assert.deepEqual(state.results, {});
+
+  await emit(b, 'room:close', { code: free.code, clave: 'clave-de-prueba' });
+  delete process.env.TORNEO_CLAVE;
+});

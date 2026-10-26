@@ -134,6 +134,7 @@ function createServer(options = {}) {
 
   async function saveFinishedGame(room) {
     if (!room || room.saved || room.saving || !room.pairingId || !room.status.over) return;
+    if (room.status.reason === 'closed') return;
     room.saving = true;
 
     const white = room.pairing ? room.pairing.white : '';
@@ -463,6 +464,19 @@ function createServer(options = {}) {
               code: active.code
             });
           }
+
+          // Solo una partida del torneo a la vez: el resto de emparejamientos
+          // esperan a que termine la que está en curso.
+          const busyRoom = rooms.all()
+            .find(room => room.pairingId && !room.status.over);
+          if (busyRoom) {
+            return respond(ack, {
+              ok: false,
+              error: 'sala_ocupada',
+              code: busyRoom.code,
+              pairingId: busyRoom.pairingId
+            });
+          }
           pairing = target;
         }
 
@@ -482,6 +496,36 @@ function createServer(options = {}) {
         log('Sala creada:', room.code, room.pairingId || '');
       } catch (error) {
         console.error('Error en room:create:', error);
+        respond(ack, { ok: false, error: 'server_error' });
+      }
+    });
+
+    // El organizador cierra una sala colgada. Libera el emparejamiento al
+    // instante y avisa a los que estén dentro (sin guardar resultado).
+    socket.on('room:close', (payload, ack) => {
+      try {
+        const expected = process.env.TORNEO_CLAVE || '';
+        if (!expected) return respond(ack, { ok: false, error: 'clave_no_configurada' });
+
+        const given = String((payload && payload.clave) || '');
+        const a = Buffer.from(given);
+        const b = Buffer.from(expected);
+        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+          return respond(ack, { ok: false, error: 'clave_incorrecta' });
+        }
+
+        const code = normalizeCode(payload && payload.code);
+        if (!code) return respond(ack, { ok: false, error: 'invalid_code' });
+
+        const room = rooms.getRoom(code);
+        if (!room) return respond(ack, { ok: false, error: 'not_found' });
+
+        rooms.closeRoom(room);
+        io.to(code).emit('room:closed', { code });
+        respond(ack, { ok: true, code });
+        log('Sala cerrada por el organizador:', code);
+      } catch (error) {
+        console.error('Error en room:close:', error);
         respond(ack, { ok: false, error: 'server_error' });
       }
     });

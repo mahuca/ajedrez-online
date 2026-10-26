@@ -20,6 +20,7 @@
     full: 'La sala ya tiene dos jugadores.',
     rate_limited: 'Demasiados intentos. Espera un momento.',
     pairing_active: 'Ya hay una sala abierta para esta partida.',
+    sala_ocupada: 'Hay otra partida en curso. Espera a que termine.',
     pairing_played: 'Esta partida ya tiene resultado guardado.',
     unknown_pairing: 'Esa partida ya no está en el calendario. Actualiza la página.',
     spectator: 'Estás mirando la partida, no jugando.',
@@ -39,6 +40,7 @@
     formatNote: document.getElementById('formatNote'),
     storageNotice: document.getElementById('storageNotice'),
     pageMessage: document.getElementById('pageMessage'),
+    liveBanner: document.getElementById('liveBanner'),
     standingsBody: document.getElementById('standingsBody'),
     progress: document.getElementById('progress'),
     rounds: document.getElementById('rounds'),
@@ -176,9 +178,48 @@
     if (!state) return;
     renderRoster();
     renderNotice();
+    renderLiveBanner();
     renderStandings();
     renderRounds();
     renderAdmin();
+  }
+
+  // Sala de torneo que está en juego ahora mismo (solo puede haber una).
+  function activeRoom() {
+    const live = state.live || {};
+    for (const pairingId of Object.keys(live)) {
+      const entry = live[pairingId];
+      if (entry && !entry.over) {
+        const game = state.schedule.find(item => item.id === pairingId);
+        return {
+          pairingId,
+          code: entry.code,
+          white: game ? game.white : '',
+          black: game ? game.black : ''
+        };
+      }
+    }
+    return null;
+  }
+
+  function renderLiveBanner() {
+    const active = activeRoom();
+    el.liveBanner.replaceChildren();
+
+    if (!active) {
+      el.liveBanner.hidden = true;
+      return;
+    }
+
+    el.liveBanner.hidden = false;
+    el.liveBanner.appendChild(h('span', 'live-dot'));
+    el.liveBanner.appendChild(h('span', 'live-text',
+      'Partida en curso: ' + active.white + ' – ' + active.black
+      + ' · las demás esperan a que termine'));
+
+    const watch = h('a', 'btn btn-ghost btn-sm', 'Ver');
+    watch.href = '/room/' + active.code + '?ver=1';
+    el.liveBanner.appendChild(watch);
   }
 
   function renderRoster() {
@@ -345,7 +386,16 @@
       watch.href = '/room/' + live.code + '?ver=1';
       watch.title = 'Mirar la partida sin jugar';
       actions.appendChild(watch);
+
+      if (hasKey()) {
+        const close = h('button', 'btn btn-danger-ghost btn-sm', 'Cerrar sala');
+        close.type = 'button';
+        close.title = 'Cerrar la sala y liberar el emparejamiento (organizador)';
+        close.addEventListener('click', () => closeRoom(live.code));
+        actions.appendChild(close);
+      }
     } else {
+      const busyRoom = activeRoom();
       const create = h('button', 'btn btn-primary btn-sm', 'Crear sala');
       create.type = 'button';
       create.title = 'Crear la sala como ' + game.white + ' (blancas)';
@@ -357,6 +407,12 @@
       join.disabled = true;
       join.title = 'Espera a que se cree la sala';
       actions.appendChild(join);
+
+      if (busyRoom) {
+        create.disabled = true;
+        create.title = 'Hay una partida en curso (' + busyRoom.white + ' – '
+          + busyRoom.black + '). Espera a que termine.';
+      }
     }
 
     article.appendChild(actions);
@@ -414,6 +470,12 @@
         await loadState({ silent: true });
         return;
       }
+      if (response.error === 'sala_ocupada' && response.code) {
+        showToast('Hay una partida en curso (' + response.code
+          + '). Espera a que termine.');
+        await loadState({ silent: true });
+        return;
+      }
       showToast(errorText(response.error), 'error');
       await loadState({ silent: true });
       return;
@@ -465,6 +527,30 @@
     state = response;
     render();
     showToast('Resultado guardado.');
+  }
+
+  async function closeRoom(code) {
+    if (busy) return;
+    if (!hasKey()) {
+      showToast('Introduce la clave de organizador.', 'error');
+      el.adminPanel.open = true;
+      el.keyInput.focus();
+      return;
+    }
+    if (!window.confirm('¿Cerrar la sala ' + code
+        + '? La partida se cancela y no se guarda.')) return;
+
+    busy = true;
+    const response = await request('room:close', { code, clave: getKey() });
+    busy = false;
+
+    if (!response.ok) {
+      showToast(errorText(response.error), 'error');
+      return;
+    }
+
+    showToast('Sala ' + code + ' cerrada.');
+    await loadState({ silent: true });
   }
 
   async function clearResult(game) {

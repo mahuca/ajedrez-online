@@ -8,7 +8,8 @@ const CODE_LENGTH = 6;
 const MAX_NAME_LENGTH = 20;
 
 const ROOM_TTL_MS = 2 * 60 * 60 * 1000;        // 2 horas sin actividad
-const EMPTY_ROOM_TTL_MS = 10 * 60 * 1000;      // 10 minutos sin jugadores
+const EMPTY_ROOM_TTL_MS = 3 * 60 * 1000;       // 3 minutos: sala recién abierta y vacía
+const RECONNECT_TTL_MS = 10 * 60 * 1000;       // 10 minutos: partida empezada sin nadie dentro
 const DISCONNECT_FORFEIT_MS = 3 * 60 * 1000;   // 3 minutos desconectado en partida
 const TOURNAMENT_FORFEIT_MS = 20 * 60 * 1000;  // 20 minutos en salas del torneo
 const MAX_SPECTATORS = 50;
@@ -390,13 +391,30 @@ class RoomManager {
     return found;
   }
 
+  // Cierre administrativo (organizador): la sala desaparece y libera el
+  // emparejamiento sin guardar resultado.
+  closeRoom(room) {
+    if (!room) return false;
+    room.status = { over: true, reason: 'closed', winner: null, inCheck: false };
+    room.saved = true;
+    stopTiming(room);
+    this.rooms.delete(room.code);
+    return true;
+  }
+
   cleanup(now = Date.now()) {
     for (const [code, room] of this.rooms) {
       const hasPlayers = !!(room.players.white || room.players.black);
       const anyConnected = ['white', 'black'].some(
         color => room.players[color] && room.players[color].connected
       );
-      const ttl = !hasPlayers || !anyConnected ? EMPTY_ROOM_TTL_MS : ROOM_TTL_MS;
+      // Una sala recién abierta y vacía (sin jugadas) se libera pronto para no
+      // bloquear el emparejamiento; si la partida ya empezó se da margen para
+      // que vuelvan a conectarse.
+      let ttl = ROOM_TTL_MS;
+      if (!hasPlayers || !anyConnected) {
+        ttl = room.moves.length === 0 ? EMPTY_ROOM_TTL_MS : RECONNECT_TTL_MS;
+      }
       if (now - room.lastActivity > ttl) this.rooms.delete(code);
     }
   }
@@ -445,5 +463,6 @@ module.exports = {
   MAX_SPECTATORS,
   ROOM_TTL_MS,
   EMPTY_ROOM_TTL_MS,
+  RECONNECT_TTL_MS,
   DISCONNECT_FORFEIT_MS
 };

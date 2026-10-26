@@ -162,6 +162,14 @@ La página `/torneo` organiza una liguilla entre los jugadores configurados:
 - **Sala por partida**: quien tiene blancas pulsa «Crear sala» y el rival pulsa
   «Unirme» cuando aparece el código. Al terminar, el resultado, los tiempos y el
   PGN se guardan automáticamente.
+- **Una sola partida a la vez**: mientras hay una sala de torneo en juego, el
+  resto de botones «Crear sala» quedan desactivados y arriba aparece el aviso
+  «Partida en curso» con el enlace para verla. El servidor también lo impide
+  (`sala_ocupada`) aunque se pulse desde otro móvil.
+- **Salas colgadas**: una sala sin jugadas y sin nadie dentro se borra a los 3
+  minutos; una partida ya empezada aguanta 10 minutos por si vuelven. Además, el
+  organizador puede cerrarla al instante con «Cerrar sala» (pide la clave); la
+  partida se cancela y no se guarda resultado.
 - **Espectadores**: el botón «Ver» abre la partida en modo espectador, con los
   dos cronómetros en directo. No ocupa asiento ni pide nombre.
 - **Administración** (con `TORNEO_CLAVE`): corregir o anular un resultado a mano,

@@ -146,3 +146,39 @@ test('una sala de torneo fija los nombres del emparejamiento', () => {
   assert.equal(joined.player.name, 'Alejandro');
   assert.equal(manager.publicRoom(room).pairing.white, 'Abuelo');
 });
+
+test('cerrar una sala libera el emparejamiento sin guardar resultado', () => {
+  const manager = new RoomManager();
+  const pairing = { id: 'Abuelo|Manuel', white: 'Abuelo', black: 'Manuel' };
+  const { room } = manager.createRoom('Abuelo', { pairing });
+
+  assert.equal(manager.getRoom(room.code), room);
+  assert.equal(manager.closeRoom(room), true);
+  assert.equal(manager.getRoom(room.code), null, 'la sala desaparece');
+  assert.equal(room.status.over, true);
+  assert.equal(room.status.reason, 'closed');
+  assert.equal(room.saved, true, 'no se guardará como resultado');
+});
+
+test('una sala vacía se libera a los 3 minutos; una partida empezada aguanta 10', () => {
+  const manager = new RoomManager();
+  const vacia = manager.createRoom('Blancas').room;
+  const empezada = twoPlayers(manager).room;
+  manager.applyMove(empezada, 'white', E4[0], E4[1], null, 0);
+
+  // Nadie conectado en ninguna de las dos.
+  for (const room of [vacia, empezada]) {
+    room.lastActivity = 0;
+    for (const color of ['white', 'black']) {
+      if (room.players[color]) room.players[color].connected = false;
+    }
+  }
+
+  // La de 0 jugadas caduca a los 3 min; la empezada aguanta 10.
+  manager.cleanup(3 * 60 * 1000 + 1);
+  assert.equal(manager.getRoom(vacia.code), null);
+  assert.equal(manager.getRoom(empezada.code), empezada);
+
+  manager.cleanup(10 * 60 * 1000 + 1);
+  assert.equal(manager.getRoom(empezada.code), null);
+});
