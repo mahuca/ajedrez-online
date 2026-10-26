@@ -752,6 +752,12 @@
               text: 'Has abandonado la partida.',
               status: 'Has abandonado la partida.'
             };
+      case 'cancelled':
+        return {
+          title: 'Sala cancelada',
+          text: 'No se jugó ninguna jugada, así que la partida no cuenta.',
+          status: 'Sala cancelada: no hubo jugadas.'
+        };
       default:
         return {
           title: 'Fin de la partida',

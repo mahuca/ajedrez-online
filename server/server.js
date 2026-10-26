@@ -135,6 +135,7 @@ function createServer(options = {}) {
   async function saveFinishedGame(room) {
     if (!room || room.saved || room.saving || !room.pairingId || !room.status.over) return;
     if (room.status.reason === 'closed') return;
+    if (room.status.reason === 'cancelled') return;
     room.saving = true;
 
     const white = room.pairing ? room.pairing.white : '';

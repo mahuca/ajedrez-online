@@ -182,3 +182,35 @@ test('una sala vacía se libera a los 3 minutos; una partida empezada aguanta 10
   manager.cleanup(10 * 60 * 1000 + 1);
   assert.equal(manager.getRoom(empezada.code), null);
 });
+
+test('salir de la sala sin jugadas cancela la partida en vez de dar la victoria', () => {
+  const manager = new RoomManager();
+  const pairing = { id: 'Abuelo|Alberto', white: 'Abuelo', black: 'Alberto' };
+  const { room, player } = manager.createRoom('Abuelo', { pairing });
+  manager.attach(room, player, 'socket-white', 0);
+  const joined = manager.joinRoom(room.code, undefined, 'Alberto');
+  manager.attach(room, joined.player, 'socket-black', 0);
+
+  // Abuelo se va de la sala sin que se haya movido ninguna pieza.
+  manager.leave(room, player.token);
+
+  assert.equal(room.status.over, true);
+  assert.equal(room.status.reason, 'cancelled');
+  assert.equal(room.status.winner, null, 'nadie gana por abandono sin jugadas');
+  assert.equal(room.saved, true, 'no se guarda resultado');
+});
+
+test('una sala abandonada sin jugadas tampoco se guarda al vencer la espera', () => {
+  const manager = new RoomManager();
+  const pairing = { id: 'Abuelo|Alberto', white: 'Abuelo', black: 'Alberto' };
+  const { room, player } = manager.createRoom('Abuelo', { pairing });
+  manager.attach(room, player, 'socket-white', 0);
+  manager.disconnect(room, player.token, 'socket-white', 1000);
+
+  const changed = manager.forfeitDisconnected(30 * 60 * 1000);
+  assert.equal(changed.length, 1);
+  assert.equal(room.status.over, true);
+  assert.equal(room.status.reason, 'cancelled');
+  assert.equal(room.status.winner, null);
+  assert.equal(room.saved, true, 'no se guarda resultado');
+});

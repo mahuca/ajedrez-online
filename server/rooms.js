@@ -245,12 +245,19 @@ class RoomManager {
     stopTiming(room);
 
     if (!room.status.over && room.players[found.color === 'white' ? 'black' : 'white']) {
-      room.status = {
-        over: true,
-        reason: 'abandonment',
-        winner: engine.other(found.color),
-        inCheck: engine.isInCheck(room.state.board, room.state.turn)
-      };
+      // Si nadie llegó a mover, no hay partida: se cancela en vez de darle la
+      // victoria a quien se quedó esperando.
+      if (room.moves.length === 0) {
+        room.status = { over: true, reason: 'cancelled', winner: null, inCheck: false };
+        room.saved = true;
+      } else {
+        room.status = {
+          over: true,
+          reason: 'abandonment',
+          winner: engine.other(found.color),
+          inCheck: engine.isInCheck(room.state.board, room.state.turn)
+        };
+      }
     }
 
     if (!room.players.white && !room.players.black) {
@@ -350,6 +357,24 @@ class RoomManager {
         }
       }
       if (missing.length === 0) continue;
+
+      // Si nadie llegó a mover, la partida no existe: se cancela sin resultado
+      // en vez de dar la victoria a quien se quedó mirando.
+      if (room.moves.length === 0) {
+        room.status = {
+          over: true,
+          reason: 'cancelled',
+          winner: null,
+          inCheck: false
+        };
+        room.saved = true;
+        stopTiming(room);
+        room.updatedAt = now;
+        room.lastActivity = now;
+        changed.push(room);
+        continue;
+      }
+
       const winner = missing.length === 2
         ? null
         : engine.other(missing[0]);
