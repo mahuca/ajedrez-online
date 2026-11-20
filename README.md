@@ -109,8 +109,8 @@ El repositorio incluye `render.yaml` para desplegar con un Blueprint.
 4. Cuando termine, abre la URL `https://ajedrez-online.onrender.com` (el nombre
    puede variar) y comparte el enlace de la sala.
 
-Si prefieres subir todo el proyecto (`chessboard.html`, `Ajedrez-Windows/` y
-`online-chess/`) en un solo repositorio, indica a Render la ruta
+Si prefieres subir todo el proyecto (`chessboard.html` y `online-chess/`) en un
+solo repositorio, indica a Render la ruta
 `online-chess/render.yaml` como Blueprint y añade `rootDir: online-chess` al
 servicio para que los comandos se ejecuten dentro de esa carpeta.
 
@@ -210,13 +210,6 @@ resultados se guardan en memoria. Las tablas se crean solas la primera vez.
 - Los nombres se limpian y se limitan a 20 caracteres.
 - Límite de intentos de creación/unión por socket y caducidad de salas.
 - No se registran jugadas ni datos personales en disco.
-
-## Paquete Windows sin conexión
-
-La versión offline sigue disponible en `../Ajedrez-Windows/` y en
-`../Ajedrez-Windows.zip`. Se abre con doble clic en `Ajedrez.bat` y no necesita
-Node.js ni internet. Incluye IA con selector de bando, capturas y giro del
-tablero.
 
 ## Solución de problemas
 
